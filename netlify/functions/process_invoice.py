@@ -28,8 +28,11 @@ def process_pdf_to_excel(pdf_content, filename):
     for page in doc:
         text += page.get_text()
     
-    # Fungsi bantu yang aman untuk regex
+    # DEBUG: Log bagian awal teks yang diekstrak untuk diagnostik
+    print(f"--- Teks yang Diekstrak (500 karakter pertama) ---\n{text[:500]}\n-----------------------------------------")
+    
     def find(pattern, source_text=text):
+        """Fungsi bantu yang aman untuk regex."""
         match = re.search(pattern, source_text, re.DOTALL | re.IGNORECASE)
         return match.group(1).strip() if match else None
 
@@ -42,21 +45,21 @@ def process_pdf_to_excel(pdf_content, filename):
     port_discharge = find(r'Port of Discharge:\s*([^\n]+)') or 'N/A'
     invoice_date = find(r'Rechnungsdatum:\s*(\d{2}-[A-Za-z]{3}-\d{4})') or 'N/A'
     stt_number = find(r'STT Nr\.:\s*(\d+)') or 'N/A'
-    
     gross_weight_kg = find(r'Bruttogewicht\s*([\d.,]+)\s*KGS') or '0'
     volume_cbm = find(r'Volumen\s*([\d.,]+)\s*CBM') or '0'
     print(f"Invoice: {invoice_number}, Date: {invoice_date}")
 
     # --- Ekstraksi Rincian Biaya ---
     print("Mencari blok biaya...")
-    # PERBAIKAN KRUSIAL: Menambahkan titik dua ':' yang hilang di akhir.
-    cost_section = find(r"Unsere Leistungen(.*?)Gesamtkosten Ustfrei-:")
+    # PERBAIKAN UTAMA: Menggunakan anchor yang lebih stabil dan fleksibel ('Gesamtbetrag')
+    # untuk menandai akhir dari blok biaya. Ini lebih tahan terhadap variasi format.
+    cost_section = find(r"Unsere Leistungen(.*?)\s*Gesamtbetrag")
     
-    # Menambah log untuk debugging
     if not cost_section:
-        print(f"DEBUG: Teks penuh untuk dianalisis: {text}")
         print("ERROR: Blok biaya 'Unsere Leistungen' tidak ditemukan. Regex gagal.")
-        raise ValueError("Tidak dapat menemukan blok rincian biaya ('Unsere Leistungen') dalam PDF. Anchor akhir tidak cocok.")
+        # Log seluruh teks jika regex gagal, ini sangat membantu untuk debugging.
+        print(f"--- TEKS LENGKAP UNTUK DEBUGGING ---\n{text}\n---------------------------------")
+        raise ValueError("Tidak dapat menemukan blok rincian biaya ('Unsere Leistungen') dalam PDF.")
 
     print("Blok biaya ditemukan. Mengekstrak setiap item biaya...")
     rows = []
