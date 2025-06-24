@@ -5,6 +5,12 @@
   # Direktori yang akan di-publish (berisi index.html).
   publish = "."
 
+  # Menetapkan variabel lingkungan untuk build
+  [build.environment]
+    # Menentukan versi Python yang akan digunakan.
+    # Ini membantu memastikan konsistensi lingkungan build dan kompatibilitas paket.
+    PYTHON_VERSION = "3.11"
+
 # Pengaturan untuk SEMUA fungsi dalam proyek.
 # Menggunakan wildcard "*" adalah cara yang benar untuk menerapkan
 # pengaturan ke setiap fungsi di direktori 'functions'.
