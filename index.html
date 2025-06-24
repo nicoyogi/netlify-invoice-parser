@@ -147,33 +147,30 @@
         labelText.textContent = `Memproses: ${file.name}`;
         statusDiv.textContent = '';
         loader.style.display = 'block';
-
-        const formData = new FormData();
-        formData.append('file', file);
-
+        
         try {
+            // --- PERUBAHAN UTAMA: Mengirim file sebagai binary stream ---
             const response = await fetch('/.netlify/functions/process_invoice', {
                 method: 'POST',
-                body: formData,
+                headers: {
+                    'Content-Type': 'application/pdf',
+                    'X-Filename': file.name // Mengirim nama file melalui header kustom
+                },
+                body: file, // Langsung mengirim objek file
             });
+            // -----------------------------------------------------------
 
-            // --- BLOK PENANGANAN ERROR YANG DIPERBARUI ---
             if (!response.ok) {
-                // Coba baca respons sebagai teks dulu.
                 const errorText = await response.text();
                 try {
-                    // Coba parsing sebagai JSON. Jika berhasil, error datang dari backend.
                     const errorData = JSON.parse(errorText);
                     throw new Error(errorData.error || 'Terjadi kesalahan saat memproses file.');
                 } catch (e) {
-                    // Jika gagal parsing JSON, berarti server crash. Tampilkan teks error mentah.
-                    // Tampilkan hanya bagian awal dari pesan error agar UI tidak rusak.
-                    throw new Error(`Server error: ${errorText.substring(0, 100)}...`);
+                    throw new Error(`Server error: ${errorText.substring(0, 150)}...`);
                 }
             }
-            // ---------------------------------------------
-
-            statusDiv.style.color = '#28a745'; // Warna hijau untuk sukses
+            
+            statusDiv.style.color = '#28a745'; 
             const contentDisposition = response.headers.get('Content-Disposition');
             let fileName = 'invoice_data.xlsx'; 
             if (contentDisposition) {
@@ -197,7 +194,7 @@
 
         } catch (error) {
             console.error('Error:', error);
-            statusDiv.style.color = '#d9534f'; // Warna merah untuk error
+            statusDiv.style.color = '#d9534f';
             statusDiv.textContent = `Error: ${error.message}`;
         } finally {
             loader.style.display = 'none';
