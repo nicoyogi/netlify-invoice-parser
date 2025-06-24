@@ -1,0 +1,11 @@
+# Pengaturan build dasar
+[build]
+  # Direktori tempat fungsi serverless Anda berada.
+  functions = "netlify/functions"
+  # Direktori yang akan di-publish (berisi index.html).
+  publish = "."
+
+# Pengaturan untuk fungsi Python
+[functions]
+  # Menaikkan batas waktu timeout untuk fungsi, berguna untuk pemrosesan file yang lebih besar.
+  timeout = 30
