@@ -22,7 +22,6 @@ def parse_amount(amount_str):
 def process_pdf_to_excel(pdf_content, filename):
     """Fungsi utama untuk mengekstrak data dari konten PDF dan menghasilkan file Excel."""
     print("Mulai memproses PDF...")
-    # PERBAIKAN: Mengubah 'pd' menjadi 'pdf' yang benar.
     doc = fitz.open(stream=pdf_content, filetype="pdf")
     text = ""
     for page in doc:
@@ -30,7 +29,7 @@ def process_pdf_to_excel(pdf_content, filename):
     
     # Fungsi bantu yang aman untuk regex
     def find(pattern, source_text=text):
-        match = re.search(pattern, source_text, re.DOTALL)
+        match = re.search(pattern, source_text, re.DOTALL | re.IGNORECASE)
         return match.group(1).strip() if match else None
 
     # --- Ekstraksi Data Header ---
@@ -49,8 +48,8 @@ def process_pdf_to_excel(pdf_content, filename):
 
     # --- Ekstraksi Rincian Biaya (Logika Baru yang Lebih Kuat) ---
     print("Mencari blok biaya...")
-    # Regex ini lebih toleran, mencari dari 'Unsere Leistungen' hingga 'Gesamt'
-    cost_section = find(r"Unsere Leistungen(.*?)Gesamt")
+    # PERBAIKAN: Regex lebih spesifik, mencari dari 'Unsere Leistungen' hingga 'Gesamtbetrag'
+    cost_section = find(r"Unsere Leistungen(.*?)Gesamtbetrag")
     
     if not cost_section:
         print("ERROR: Blok biaya 'Unsere Leistungen' tidak ditemukan.")
@@ -61,9 +60,9 @@ def process_pdf_to_excel(pdf_content, filename):
     cost_label_map = {
         "Summarische Eingangsmeldung": "ENS",
         "Seefracht": "SFRT",
-        "THC \(Terminal Handling Charge\)": "THC", # Backslash untuk escape kurung
+        r"THC \(Terminal Handling Charge\)": "THC", # Backslash untuk escape kurung
         "Abfertigungskosten im": "CCDE",
-        "ISPS \(Hafen & Terminal": "ISPS", # Backslash untuk escape kurung
+        r"ISPS \(Hafen & Terminal": "ISPS", # Backslash untuk escape kurung
         "Nachlaufkosten": "NL",
         "Delivery-/Drop-Off-Gebühr": "DROP",
         "Importverzollung in NL": "Zoll"
@@ -71,12 +70,11 @@ def process_pdf_to_excel(pdf_content, filename):
 
     for label_pattern, code in cost_label_map.items():
         # Pola regex yang mencari label diikuti oleh 'EUR' dan sebuah angka.
-        # Ini lebih kuat karena tidak bergantung pada posisi pasti.
         amount_str = find(rf"{label_pattern}.*?EUR\s+([\d.,]+)", source_text=cost_section)
         
         if amount_str:
             amount_float = parse_amount(amount_str)
-            if amount_float > 0:
+            if amount_float >= 0: # Izinkan biaya 0
                 print(f"Ditemukan: {code} = {amount_float}")
                 rows.append({
                     "file": filename, "invoice_number": invoice_number, "sender": sender,
@@ -94,7 +92,6 @@ def process_pdf_to_excel(pdf_content, filename):
     print(f"Berhasil mengekstrak {len(rows)} baris biaya. Membuat file Excel...")
     df_long = pd.DataFrame(rows)
     output = io.BytesIO()
-    # ... (Sisa kode untuk styling Excel sama dan seharusnya aman)
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_long.to_excel(writer, index=False, sheet_name='InvoiceData')
         ws = writer.sheets['InvoiceData']
@@ -125,31 +122,47 @@ def process_pdf_to_excel(pdf_content, filename):
 
 def handler(event, context):
     """Fungsi handler yang dipanggil oleh Netlify saat ada request."""
-    # Wrapping seluruh fungsi dalam try-except untuk menangkap semua kemungkinan error
     try:
         print("Fungsi handler dipanggil.")
-        # ... (Logika parsing body request sama dan seharusnya aman)
+        
+        # --- PERBAIKAN: Logika Parsing Body yang Lebih Aman ---
         content_type = event['headers'].get('content-type', '')
         if 'multipart/form-data' not in content_type:
-            raise ValueError("Tipe konten tidak valid, harus multipart/form-data")
+            raise ValueError(f"Tipe konten tidak valid: {content_type}")
         
-        boundary_match = re.search(r'boundary=(.*)', content_type)
-        if not boundary_match:
-            raise ValueError("Boundary tidak ditemukan dalam content-type header.")
-        boundary = boundary_match.group(1)
-
+        # Mendekode body dari base64
         body_decoded = base64.b64decode(event['body'])
         
-        file_part_start = body_decoded.find(b'Content-Type: application/pdf\r\n\r\n')
-        if file_part_start == -1:
-            raise ValueError("Konten PDF tidak ditemukan dalam request body.")
-        file_content_start = file_part_start + len(b'Content-Type: application/pdf\r\n\r\n')
-        file_part_end = body_decoded.find(b'\r\n--' + boundary.encode(), file_content_start)
-        pdf_content = body_decoded[file_content_start:file_part_end]
-
+        # Ekstrak filename
         filename_match = re.search(b'filename="([^"]+)"', body_decoded)
         filename = filename_match.group(1).decode() if filename_match else "unknown.pdf"
         print(f"Menerima file: {filename}")
+        
+        # Ekstrak konten file PDF
+        # Menemukan awal dari konten file setelah header 'Content-Type'
+        file_header_end = b'Content-Type: application/pdf\r\n\r\n'
+        file_start_index = body_decoded.find(file_header_end)
+        if file_start_index == -1:
+            raise ValueError("Header konten PDF tidak ditemukan dalam request body.")
+            
+        # Pindahkan pointer ke akhir header untuk mendapatkan awal konten
+        content_start_index = file_start_index + len(file_header_end)
+        
+        # Temukan boundary penutup
+        boundary_match = re.search(b'boundary=(--[^\s;]+)', content_type.encode())
+        if not boundary_match:
+            raise ValueError("Boundary multipart tidak ditemukan di header.")
+            
+        boundary = boundary_match.group(1)
+        content_end_index = body_decoded.find(boundary, content_start_index)
+        
+        if content_end_index == -1:
+            raise ValueError("Boundary penutup tidak ditemukan setelah konten file.")
+
+        # Potong konten file mentah (menghapus CRLF di akhir)
+        pdf_content = body_decoded[content_start_index:content_end_index].rstrip(b'\r\n')
+        
+        print(f"Berhasil mem-parsing konten PDF dengan panjang: {len(pdf_content)} bytes.")
 
         # Panggil fungsi utama untuk pemrosesan
         excel_data = process_pdf_to_excel(pdf_content, filename)
@@ -165,8 +178,7 @@ def handler(event, context):
             "isBase64Encoded": True
         }
     except Exception as e:
-        # Blok ini akan menangkap error APAPUN dan mengembalikannya sebagai JSON
-        error_message = f"Terjadi kesalahan fatal di server: {str(e)}"
+        error_message = f"Terjadi kesalahan fatal di server: {type(e).__name__} - {str(e)}"
         print(f"ERROR: {error_message}")
         return {
             "statusCode": 500,
