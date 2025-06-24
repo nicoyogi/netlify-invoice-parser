@@ -22,6 +22,7 @@ def parse_amount(amount_str):
 def process_pdf_to_excel(pdf_content, filename):
     """Fungsi utama untuk mengekstrak data dari konten PDF dan menghasilkan file Excel."""
     print("Mulai memproses PDF...")
+    # PERBAIKAN: Mengubah 'pd' menjadi 'pdf' yang benar.
     doc = fitz.open(stream=pdf_content, filetype="pdf")
     text = ""
     for page in doc:
