@@ -5,6 +5,7 @@ import os
 import io
 import json
 import base64
+import traceback
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
@@ -48,10 +49,14 @@ def process_pdf_to_excel(pdf_content, filename):
 
     # --- Ekstraksi Rincian Biaya ---
     print("Mencari blok biaya...")
-    cost_section = find(r"Unsere Leistungen(.*?)Gesamtbetrag")
+    # PERBAIKAN: Menggunakan anchor yang lebih stabil untuk akhir blok biaya.
+    cost_section = find(r"Unsere Leistungen(.*?)Gesamtkosten Ustfrei-")
+    
+    # Menambah log untuk debugging
+    print(f"DEBUG: Konten blok biaya yang diekstrak: {cost_section}")
     
     if not cost_section:
-        print("ERROR: Blok biaya 'Unsere Leistungen' tidak ditemukan.")
+        print("ERROR: Blok biaya 'Unsere Leistungen' tidak ditemukan atau anchor akhir salah.")
         raise ValueError("Tidak dapat menemukan blok rincian biaya ('Unsere Leistungen') dalam PDF.")
 
     print("Blok biaya ditemukan. Mengekstrak setiap item biaya...")
@@ -122,19 +127,15 @@ def handler(event, context):
     try:
         print("Fungsi handler dipanggil.")
         
-        # --- PERUBAHAN UTAMA: Memproses body sebagai binary stream ---
         if not event.get('isBase64Encoded'):
              raise ValueError("Body request tidak ter-encode base64.")
 
-        # Dapatkan nama file dari header kustom
         filename = event['headers'].get('x-filename', 'unknown.pdf')
         print(f"Menerima file: {filename}")
         
-        # Body sudah berupa konten file mentah yang di-encode base64
         pdf_content = base64.b64decode(event['body'])
         print(f"Berhasil mem-parsing konten PDF dengan panjang: {len(pdf_content)} bytes.")
 
-        # Panggil fungsi utama untuk pemrosesan
         excel_data = process_pdf_to_excel(pdf_content, filename)
 
         print("Mengirimkan file Excel sebagai respons.")
@@ -148,10 +149,15 @@ def handler(event, context):
             "isBase64Encoded": True
         }
     except Exception as e:
-        error_message = f"Terjadi kesalahan fatal di server: {type(e).__name__} - {str(e)}"
-        print(f"ERROR: {error_message}")
+        # PERBAIKAN: Menambah traceback untuk logging yang lebih detail
+        tb_str = traceback.format_exc()
+        error_message_for_log = f"Terjadi kesalahan fatal di server: {type(e).__name__} - {e}\nTraceback:\n{tb_str}"
+        print(f"ERROR: {error_message_for_log}")
+        
+        # Pesan yang dikirim ke user tetap sederhana
+        user_error_message = f"Terjadi kesalahan di server: {type(e).__name__} - {str(e)}"
         return {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"error": error_message})
+            "body": json.dumps({"error": user_error_message})
         }
