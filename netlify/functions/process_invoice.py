@@ -46,9 +46,8 @@ def process_pdf_to_excel(pdf_content, filename):
     volume_cbm = find(r'Volumen\s*([\d.,]+)\s*CBM') or '0'
     print(f"Invoice: {invoice_number}, Date: {invoice_date}")
 
-    # --- Ekstraksi Rincian Biaya (Logika Baru yang Lebih Kuat) ---
+    # --- Ekstraksi Rincian Biaya ---
     print("Mencari blok biaya...")
-    # PERBAIKAN: Regex lebih spesifik, mencari dari 'Unsere Leistungen' hingga 'Gesamtbetrag'
     cost_section = find(r"Unsere Leistungen(.*?)Gesamtbetrag")
     
     if not cost_section:
@@ -60,32 +59,30 @@ def process_pdf_to_excel(pdf_content, filename):
     cost_label_map = {
         "Summarische Eingangsmeldung": "ENS",
         "Seefracht": "SFRT",
-        r"THC \(Terminal Handling Charge\)": "THC", # Backslash untuk escape kurung
+        r"THC \(Terminal Handling Charge\)": "THC",
         "Abfertigungskosten im": "CCDE",
-        r"ISPS \(Hafen & Terminal": "ISPS", # Backslash untuk escape kurung
+        r"ISPS \(Hafen & Terminal": "ISPS",
         "Nachlaufkosten": "NL",
         "Delivery-/Drop-Off-Gebühr": "DROP",
         "Importverzollung in NL": "Zoll"
     }
 
     for label_pattern, code in cost_label_map.items():
-        # Pola regex yang mencari label diikuti oleh 'EUR' dan sebuah angka.
         amount_str = find(rf"{label_pattern}.*?EUR\s+([\d.,]+)", source_text=cost_section)
         
         if amount_str:
             amount_float = parse_amount(amount_str)
-            if amount_float >= 0: # Izinkan biaya 0
-                print(f"Ditemukan: {code} = {amount_float}")
-                rows.append({
-                    "file": filename, "invoice_number": invoice_number, "sender": sender,
-                    "etd_eta": etd_eta, "port_loading": port_loading, "port_discharge": port_discharge,
-                    "invoice_date": invoice_date, "stt_number": stt_number,
-                    "gross_weight_kg": gross_weight_kg, "volume_cbm": volume_cbm,
-                    "cost_type": code, "amount": amount_float
-                })
+            print(f"Ditemukan: {code} = {amount_float}")
+            rows.append({
+                "file": filename, "invoice_number": invoice_number, "sender": sender,
+                "etd_eta": etd_eta, "port_loading": port_loading, "port_discharge": port_discharge,
+                "invoice_date": invoice_date, "stt_number": stt_number,
+                "gross_weight_kg": gross_weight_kg, "volume_cbm": volume_cbm,
+                "cost_type": code, "amount": amount_float
+            })
 
     if not rows:
-        print("ERROR: Tidak ada baris biaya yang berhasil diekstrak dari blok biaya.")
+        print("ERROR: Tidak ada baris biaya yang berhasil diekstrak.")
         raise ValueError("Tidak ada rincian biaya yang dapat diekstrak. Format PDF mungkin berbeda.")
 
     # --- Pembuatan File Excel di Memori ---
@@ -125,43 +122,16 @@ def handler(event, context):
     try:
         print("Fungsi handler dipanggil.")
         
-        # --- PERBAIKAN: Logika Parsing Body yang Lebih Aman ---
-        content_type = event['headers'].get('content-type', '')
-        if 'multipart/form-data' not in content_type:
-            raise ValueError(f"Tipe konten tidak valid: {content_type}")
-        
-        # Mendekode body dari base64
-        body_decoded = base64.b64decode(event['body'])
-        
-        # Ekstrak filename
-        filename_match = re.search(b'filename="([^"]+)"', body_decoded)
-        filename = filename_match.group(1).decode() if filename_match else "unknown.pdf"
+        # --- PERUBAHAN UTAMA: Memproses body sebagai binary stream ---
+        if not event.get('isBase64Encoded'):
+             raise ValueError("Body request tidak ter-encode base64.")
+
+        # Dapatkan nama file dari header kustom
+        filename = event['headers'].get('x-filename', 'unknown.pdf')
         print(f"Menerima file: {filename}")
         
-        # Ekstrak konten file PDF
-        # Menemukan awal dari konten file setelah header 'Content-Type'
-        file_header_end = b'Content-Type: application/pdf\r\n\r\n'
-        file_start_index = body_decoded.find(file_header_end)
-        if file_start_index == -1:
-            raise ValueError("Header konten PDF tidak ditemukan dalam request body.")
-            
-        # Pindahkan pointer ke akhir header untuk mendapatkan awal konten
-        content_start_index = file_start_index + len(file_header_end)
-        
-        # Temukan boundary penutup
-        boundary_match = re.search(b'boundary=(--[^\s;]+)', content_type.encode())
-        if not boundary_match:
-            raise ValueError("Boundary multipart tidak ditemukan di header.")
-            
-        boundary = boundary_match.group(1)
-        content_end_index = body_decoded.find(boundary, content_start_index)
-        
-        if content_end_index == -1:
-            raise ValueError("Boundary penutup tidak ditemukan setelah konten file.")
-
-        # Potong konten file mentah (menghapus CRLF di akhir)
-        pdf_content = body_decoded[content_start_index:content_end_index].rstrip(b'\r\n')
-        
+        # Body sudah berupa konten file mentah yang di-encode base64
+        pdf_content = base64.b64decode(event['body'])
         print(f"Berhasil mem-parsing konten PDF dengan panjang: {len(pdf_content)} bytes.")
 
         # Panggil fungsi utama untuk pemrosesan
