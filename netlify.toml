@@ -5,7 +5,11 @@
   # Direktori yang akan di-publish (berisi index.html).
   publish = "."
 
-# Pengaturan untuk fungsi Python
-[functions]
-  # Menaikkan batas waktu timeout untuk fungsi, berguna untuk pemrosesan file yang lebih besar.
+# Pengaturan untuk SEMUA fungsi dalam proyek.
+# Menggunakan wildcard "*" adalah cara yang benar untuk menerapkan
+# pengaturan ke setiap fungsi di direktori 'functions'.
+[functions."*"]
+  # Menaikkan batas waktu timeout (dalam detik).
+  # Ini penting untuk fungsi yang memproses file, karena bisa memakan waktu
+  # lebih dari default 10 detik.
   timeout = 30
