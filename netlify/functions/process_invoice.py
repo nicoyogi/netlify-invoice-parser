@@ -49,15 +49,14 @@ def process_pdf_to_excel(pdf_content, filename):
 
     # --- Ekstraksi Rincian Biaya ---
     print("Mencari blok biaya...")
-    # PERBAIKAN: Menggunakan anchor yang lebih stabil untuk akhir blok biaya.
-    cost_section = find(r"Unsere Leistungen(.*?)Gesamtkosten Ustfrei-")
+    # PERBAIKAN KRUSIAL: Menambahkan titik dua ':' yang hilang di akhir.
+    cost_section = find(r"Unsere Leistungen(.*?)Gesamtkosten Ustfrei-:")
     
     # Menambah log untuk debugging
-    print(f"DEBUG: Konten blok biaya yang diekstrak: {cost_section}")
-    
     if not cost_section:
-        print("ERROR: Blok biaya 'Unsere Leistungen' tidak ditemukan atau anchor akhir salah.")
-        raise ValueError("Tidak dapat menemukan blok rincian biaya ('Unsere Leistungen') dalam PDF.")
+        print(f"DEBUG: Teks penuh untuk dianalisis: {text}")
+        print("ERROR: Blok biaya 'Unsere Leistungen' tidak ditemukan. Regex gagal.")
+        raise ValueError("Tidak dapat menemukan blok rincian biaya ('Unsere Leistungen') dalam PDF. Anchor akhir tidak cocok.")
 
     print("Blok biaya ditemukan. Mengekstrak setiap item biaya...")
     rows = []
@@ -149,12 +148,10 @@ def handler(event, context):
             "isBase64Encoded": True
         }
     except Exception as e:
-        # PERBAIKAN: Menambah traceback untuk logging yang lebih detail
         tb_str = traceback.format_exc()
         error_message_for_log = f"Terjadi kesalahan fatal di server: {type(e).__name__} - {e}\nTraceback:\n{tb_str}"
         print(f"ERROR: {error_message_for_log}")
         
-        # Pesan yang dikirim ke user tetap sederhana
         user_error_message = f"Terjadi kesalahan di server: {type(e).__name__} - {str(e)}"
         return {
             "statusCode": 500,
